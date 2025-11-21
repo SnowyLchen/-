@@ -19,6 +19,7 @@ const App: React.FC = () => {
     addGeneratedItem,
     removeItem,
     startProcessing,
+    retryItem,
     resetAll
   } = useProcessingQueue();
   
@@ -61,6 +62,7 @@ const App: React.FC = () => {
           <ResultList 
             items={items}
             onReset={handleReset}
+            onRetry={retryItem}
           />
         </div>
 

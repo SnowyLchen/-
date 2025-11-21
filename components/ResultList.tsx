@@ -7,6 +7,7 @@ import ImageViewer from './ImageViewer';
 interface Props {
   items: ScanItem[];
   onReset: () => void;
+  onRetry?: (id: string) => void;
 }
 
 declare global {
@@ -16,7 +17,7 @@ declare global {
   }
 }
 
-const ResultList: React.FC<Props> = ({ items, onReset }) => {
+const ResultList: React.FC<Props> = ({ items, onReset, onRetry }) => {
   const [isZipping, setIsZipping] = useState(false);
   const [viewingUrl, setViewingUrl] = useState<{url: string, title: string} | null>(null);
 
@@ -128,6 +129,7 @@ const ResultList: React.FC<Props> = ({ items, onReset }) => {
             key={item.id} 
             item={item} 
             onView={(url, title) => setViewingUrl({url, title})}
+            onRetry={onRetry}
           />
         ))}
       </div>
@@ -146,8 +148,9 @@ const ResultList: React.FC<Props> = ({ items, onReset }) => {
 
 const ComparisonRow: React.FC<{ 
     item: ScanItem, 
-    onView: (url: string, title: string) => void 
-}> = ({ item, onView }) => {
+    onView: (url: string, title: string) => void,
+    onRetry?: (id: string) => void
+}> = ({ item, onView, onRetry }) => {
   
   const isReady = item.status === 'cropped';
   const isError = item.status === 'error';
@@ -168,11 +171,24 @@ const ComparisonRow: React.FC<{
                </div>
                <div className="min-w-0 flex-1">
                   <h3 className="font-semibold text-slate-700 text-sm truncate" title={item.name}>{item.name}</h3>
-                  <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-1.5">
+                  <div className="text-[11px] text-slate-500 mt-1 flex flex-col items-start gap-1.5">
                       {(item.status === 'detecting' || item.status === 'uploading') && <span className="text-blue-500 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin"/> 处理中...</span>}
                       {item.status === 'cropping' && <span className="text-purple-500">裁剪中...</span>}
                       {item.status === 'cropped' && <span className="text-green-600 font-medium flex items-center gap-1"><CheckCircle className="w-3 h-3"/> 已完成</span>}
-                      {item.status === 'error' && <span className="text-red-500">失败</span>}
+                      {item.status === 'error' && (
+                        <div className="flex flex-col gap-2 w-full">
+                            <span className="text-red-500 flex items-center gap-1"><AlertCircle className="w-3 h-3"/> 失败</span>
+                            {onRetry && (
+                                <button 
+                                    onClick={() => onRetry(item.id)}
+                                    className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white border border-red-200 text-red-600 text-xs rounded hover:bg-red-50 transition-colors shadow-sm w-full"
+                                >
+                                    <RefreshCw className="w-3 h-3" />
+                                    重试
+                                </button>
+                            )}
+                        </div>
+                      )}
                   </div>
                </div>
             </div>

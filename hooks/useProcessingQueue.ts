@@ -180,6 +180,20 @@ export const useProcessingQueue = () => {
 
   }, [addNotification]);
 
+  const retryItem = useCallback((id: string) => {
+    // Reset item status to idle and clear error
+    setItems(prev => prev.map(item => 
+      item.id === id 
+        ? { ...item, status: 'idle', results: [], errorMessage: undefined } 
+        : item
+    ));
+
+    // Trigger processing in next tick to ensure state update is reflected
+    setTimeout(() => {
+      startProcessing();
+    }, 100);
+  }, [startProcessing]);
+
   return {
     items,
     isProcessing,
@@ -190,6 +204,7 @@ export const useProcessingQueue = () => {
     addGeneratedItem,
     removeItem,
     startProcessing,
+    retryItem,
     resetAll
   };
 };
