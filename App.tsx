@@ -6,12 +6,15 @@ import { useProcessingQueue } from './hooks/useProcessingQueue';
 import Header from './components/Header';
 import UploadModule from './components/UploadModule';
 import ResultList from './components/ResultList';
+import ToastContainer from './components/Toast';
 
 const App: React.FC = () => {
   const {
     items,
     isProcessing,
     hasStarted,
+    notifications,
+    removeNotification,
     addFiles,
     addGeneratedItem,
     removeItem,
@@ -62,6 +65,12 @@ const App: React.FC = () => {
         </div>
 
       </main>
+      
+      {/* Notifications */}
+      <ToastContainer 
+        notifications={notifications}
+        onClose={removeNotification}
+      />
     </div>
   );
 };

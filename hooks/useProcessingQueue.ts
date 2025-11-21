@@ -1,15 +1,41 @@
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { ScanItem } from '../types';
 import { ScanService } from '../services/scanService';
 
-const CONCURRENCY_LIMIT = 2;
+export interface Notification {
+  id: string;
+  message: string;
+  type: 'success' | 'error';
+}
 
 export const useProcessingQueue = () => {
   const [items, setItems] = useState<ScanItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  
+  // Use a Ref to access the latest items state inside async loops
+  const itemsRef = useRef<ScanItem[]>([]);
+  
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
+  // --- Notification Helper ---
+  const addNotification = useCallback((message: string, type: 'success' | 'error' = 'success') => {
+    const id = uuidv4();
+    setNotifications(prev => [...prev, { id, message, type }]);
+    // Auto dismiss after 3 seconds
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    }, 3000);
+  }, []);
+
+  const removeNotification = useCallback((id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  }, []);
 
   // --- Item Management ---
 
@@ -42,120 +68,99 @@ export const useProcessingQueue = () => {
     setItems([]);
     setHasStarted(false);
     setIsProcessing(false);
+    setNotifications([]);
   }, []);
 
-  // --- Queue Processing Logic ---
-
-  const processItem = async (id: string) => {
-    // Update status to detecting
-    setItems(prev => prev.map(i => i.id === id ? { ...i, status: 'detecting' } : i));
-    
-    let currentItem: ScanItem | undefined = items.find(i => i.id === id);
-    // Need to get fresh state inside async? 
-    // Actually, better to trust the ID and input parameters, but we need the URL.
-    // We'll use a functional update for `setItems` but we need the URL first.
-    // To resolve this safely, we can pass the URL into this function or read from a ref, 
-    // but reading from current state snapshot `items` (from closure) might be stale if items changed rapidly.
-    // However, `items` in `processQueue` (the caller) is fresh when the queue starts.
-    
-    // Let's find the URL from the functional update to ensure we have the object
-    // But we can't await inside setState.
-    // So we rely on the fact that `originalUrl` doesn't change once added.
-    const itemToProcess = items.find(i => i.id === id);
-    if (!itemToProcess) return;
-
-    try {
-      // Step 1: Get Meta (Simulate getting image ID/upload)
-      const metaRes = await ScanService.getImageMeta(itemToProcess.originalUrl);
-      const { width, height } = metaRes.data;
-
-      // Step 2: Detect
-      const detectRes = await ScanService.detectBoundary(itemToProcess.originalUrl, width, height);
-      const boundingBox = detectRes.data;
-
-      // Update state to 'cropping' (optional visual step, or just go straight to processed)
-      setItems(prev => prev.map(i => i.id === id ? { ...i, width, height, boundingBox, status: 'cropping' } : i));
-
-      // Step 3: Crop
-      const cropRes = await ScanService.cropImage(itemToProcess.originalUrl, boundingBox);
-      const croppedUrl = cropRes.data;
-
-      // Finish
-      setItems(prev => prev.map(i => 
-        i.id === id ? { ...i, croppedUrl, status: 'cropped' } : i
-      ));
-
-    } catch (error: any) {
-      console.error(`Processing failed for ${id}`, error);
-      setItems(prev => prev.map(i => 
-        i.id === id ? { ...i, status: 'error', errorMessage: error.message || 'Unknown error' } : i
-      ));
-    }
+  // --- Helper to update item status safely ---
+  const updateItemStatus = (id: string, status: ScanItem['status'], extra?: Partial<ScanItem>) => {
+    setItems(prev => prev.map(item => 
+      item.id === id ? { ...item, status, ...extra } : item
+    ));
   };
 
-  // Recursive Queue Worker
-  const processQueue = useCallback((queueIds: string[]) => {
-    const queue = [...queueIds];
-    let activeWorkers = 0;
-
-    const work = async () => {
-      // If queue empty and no workers, we are done
-      if (queue.length === 0 && activeWorkers === 0) {
-        setIsProcessing(false);
-        return;
-      }
-
-      // If nothing left to pick up
-      if (queue.length === 0) return;
-
-      // Spawn workers up to limit
-      while (queue.length > 0 && activeWorkers < CONCURRENCY_LIMIT) {
-        const id = queue.shift();
-        if (!id) continue;
-
-        activeWorkers++;
-        
-        // Process, then release worker and recurse
-        processItem(id).finally(() => {
-          activeWorkers--;
-          work();
-        });
-      }
-    };
-
-    work();
-  }, [items]); // Dependencies need to be careful here. `processItem` closes over `items`.
-
-  // We need to make sure `processItem` has access to the latest `items` or passes data correctly.
-  // Since `processItem` is defined INSIDE the hook, it sees `items`. 
-  // BUT, if `processQueue` is called, it captures the scope.
-  // Refactoring `processItem` to accept the URL directly avoids the closure staleness issue for immutable properties.
-  
-  // Re-implementing processItem to be robust against closures:
-  // Actually, since `processQueue` is triggered once, the `items` in closure is the state AT TRIGGER time.
-  // This is usually fine for `originalUrl` which doesn't change.
-  
-  const startProcessing = useCallback(() => {
-    const idleItems = items.filter(i => i.status === 'idle');
-    if (idleItems.length === 0) return;
+  // --- Sequential Processing Logic ---
+  const startProcessing = useCallback(async () => {
+    // Identify idle items at the start
+    const itemsToProcessIds = itemsRef.current
+      .filter(i => i.status === 'idle')
+      .map(i => i.id);
+    
+    if (itemsToProcessIds.length === 0) return;
 
     setHasStarted(true);
     setIsProcessing(true);
 
-    // Pass necessary data to the queue processor so it doesn't depend on stale state for readonly data
-    const queueIds = idleItems.map(i => i.id);
-    
-    // We use a ref-like pattern for the queue runner or just pass IDs and let `processItem` find via functional state updates?
-    // `processItem` above reads `items.find`. If `items` changes (e.g. user deletes an item while processing), `itemToProcess` might be undefined.
-    // We added a check `if (!itemToProcess) return;` which handles safety.
-    
-    processQueue(queueIds);
-  }, [items, processQueue]);
+    // Process strictly one by one
+    for (const itemId of itemsToProcessIds) {
+      
+      // Check if item still exists (in case user deleted it while processing others)
+      const currentItem = itemsRef.current.find(i => i.id === itemId);
+      if (!currentItem) continue;
+
+      try {
+        // 1. Upload Phase
+        updateItemStatus(itemId, 'uploading');
+        
+        let remotePath = '';
+        
+        if (currentItem.file) {
+           remotePath = await ScanService.uploadImage(currentItem.file);
+        } else if (currentItem.originalUrl) {
+           // Handle AI generated blobs or other URLs
+           try {
+             const blob = await fetch(currentItem.originalUrl).then(r => r.blob());
+             const file = new File([blob], currentItem.name, { type: blob.type });
+             remotePath = await ScanService.uploadImage(file);
+           } catch (e) {
+             console.error("Blob conversion failed", e);
+             throw new Error("Failed to prepare image for upload");
+           }
+        }
+
+        if (!remotePath) {
+           throw new Error("Upload returned no path");
+        }
+
+        // 2. Inference Phase (Upload complete, starting detection)
+        updateItemStatus(itemId, 'detecting', { remoteUrl: remotePath });
+
+        // Pass the single remote path to the prediction API
+        const results = await ScanService.predictAndCrop([remotePath]);
+        
+        if (results && results.length > 0) {
+           const result = results[0];
+           // 3. Completion Phase
+           updateItemStatus(itemId, 'cropped', {
+             previewUrl: result.predict_img, // Detection visualization
+             croppedUrl: result.crop_img,    // Final cropped result
+           });
+           
+           // 4. Notification
+           addNotification(`图片 ${currentItem.name} 处理完成`, 'success');
+        } else {
+           throw new Error("No results returned from API");
+        }
+
+      } catch (error: any) {
+        console.error(`Processing failed for ${currentItem.name}`, error);
+        updateItemStatus(itemId, 'error', { errorMessage: error.message });
+        addNotification(`图片 ${currentItem.name} 处理失败`, 'error');
+      }
+      
+      // Optional: Short delay for better UI pacing
+      await new Promise(r => setTimeout(r, 300));
+    }
+
+    setIsProcessing(false);
+
+  }, [addNotification]); // Dependency reduced to stable addNotification
 
   return {
     items,
     isProcessing,
     hasStarted,
+    notifications,
+    removeNotification,
     addFiles,
     addGeneratedItem,
     removeItem,

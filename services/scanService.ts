@@ -1,80 +1,86 @@
 
-import { BoundingBox } from "../types";
-import { httpClient } from "../utils/network";
+import { BackendScanResult } from "../types";
+
+// Base URL for API requests. Leave empty to use relative paths (proxy) or set to your backend URL.
+const API_BASE_URL = ''; 
 
 /**
- * Private Helper: Load Image
- * Not exported as part of the API, just an internal util for the mock backend
- */
-const loadImageInternal = (url: string): Promise<HTMLImageElement> => {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = "Anonymous";
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = url;
-  });
-};
-
-/**
- * 图像处理服务
- * 模拟后端 API 行为
+ * Service to interact with the Scan Backend API
  */
 export const ScanService = {
   
   /**
-   * 获取图片基础信息 (模拟轻量级接口)
+   * Uploads a single file to the backend.
+   * Endpoint: /api/upload
+   * Response: { status: "success", local_path: "...", filename: "..." }
    */
-  getImageMeta: async (url: string) => {
-    return httpClient.mockRequest(async () => {
-      const img = await loadImageInternal(url);
-      return { width: img.width, height: img.height };
-    }, [100, 300]);
-  },
+  uploadImage: async (file: File): Promise<string> => {
+    const formData = new FormData();
+    formData.append('file', file);
 
-  /**
-   * 智能边界识别 API
-   */
-  detectBoundary: async (url: string, width: number, height: number) => {
-    return httpClient.mockRequest(() => {
-      // 模拟算法识别逻辑
-      const marginX = width * (0.05 + Math.random() * 0.1);
-      const marginY = height * (0.05 + Math.random() * 0.1);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Upload failed: ${response.statusText}`);
+      }
+
+      const data = await response.json();
       
-      const boxWidth = width - (marginX * 2);
-      const boxHeight = height - (marginY * 2);
+      if (data.status === 'error') {
+        throw new Error(data.message || "Upload failed");
+      }
 
-      const box: BoundingBox = {
-        x: marginX,
-        y: marginY,
-        width: boxWidth,
-        height: boxHeight
-      };
-      return box;
-    }, [800, 1500]); // 模拟较重的计算延迟
+      // Backend returns 'local_path' which represents the absolute path on the server
+      const remotePath = data.local_path;
+      
+      if (!remotePath) {
+         throw new Error("Upload successful but no local_path returned");
+      }
+      
+      return remotePath;
+
+    } catch (error) {
+      console.error("ScanService Upload Error:", error);
+      throw error;
+    }
   },
 
   /**
-   * 智能裁剪 API
+   * Calls the prediction endpoint with the uploaded image paths.
+   * Endpoint: /api/predict_and_crop
+   * Payload: { images: ["path/to/file"] }
+   * Response: { task_id: "...", results: [...] }
    */
-  cropImage: async (url: string, box: BoundingBox) => {
-    return httpClient.mockRequest(async () => {
-      const img = await loadImageInternal(url);
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
+  predictAndCrop: async (remotePaths: string[]): Promise<BackendScanResult[]> => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/predict_and_crop`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ images: remotePaths }),
+      });
 
-      if (!ctx) throw new Error("Canvas context initialization failed");
+      if (!response.ok) {
+        throw new Error(`Prediction failed: ${response.statusText}`);
+      }
 
-      canvas.width = box.width;
-      canvas.height = box.height;
+      const data = await response.json();
+      
+      // The python backend returns { "task_id": "...", "results": [...] }
+      if (data.results) {
+          return data.results;
+      }
+      
+      return [];
 
-      ctx.drawImage(
-        img,
-        box.x, box.y, box.width, box.height, 
-        0, 0, box.width, box.height
-      );
-
-      return canvas.toDataURL('image/jpeg', 0.9);
-    }, [500, 1000]);
+    } catch (error) {
+      console.error("ScanService Predict Error:", error);
+      throw error;
+    }
   }
 };

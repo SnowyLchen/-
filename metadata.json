@@ -1,5 +1,5 @@
 {
-  "name": "智能扫描助手-前端",
-  "description": "智能文档扫描、边界自动识别与自动裁剪工具---前端。",
+  "name": "智能扫描助手",
+  "description": "智能文档扫描、边界自动识别与自动裁剪工具。",
   "requestFramePermissions": []
 }
