@@ -9,9 +9,15 @@ export interface BoundingBox {
 export type ProcessingStatus = 'idle' | 'uploading' | 'detecting' | 'detected' | 'cropping' | 'cropped' | 'error';
 
 export interface BackendScanResult {
-  img: string;         // Original image URL from server
+  img: string;         // Original image URL from server or base64
   predict_img: string; // Image with detection visualization
   crop_img: string;    // Final cropped image
+}
+
+export interface ProcessedResult {
+  img?: string;
+  previewUrl: string;
+  croppedUrl: string;
 }
 
 export interface ScanItem {
@@ -21,9 +27,8 @@ export interface ScanItem {
   remoteUrl?: string; // Path on the server after upload
   name: string;
   status: ProcessingStatus;
+  results: ProcessedResult[]; // Support multiple results per item
   boundingBox?: BoundingBox;
-  croppedUrl?: string;
-  previewUrl?: string; // URL for the detection visualization (predict_img)
   width?: number;
   height?: number;
   errorMessage?: string;
