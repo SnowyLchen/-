@@ -10,7 +10,7 @@ interface Props {
 
 const ToastContainer: React.FC<Props> = ({ notifications, onClose }) => {
   return (
-    <div className="fixed bottom-6 right-6 z-[200] flex flex-col gap-3 pointer-events-none">
+    <div className="fixed top-20 right-6 z-[200] flex flex-col gap-3 pointer-events-none">
       {notifications.map((note) => (
         <div 
           key={note.id}

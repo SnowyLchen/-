@@ -1,5 +1,5 @@
 
-import React, { useRef } from 'react';
+import React from 'react';
 import { ScanItem } from '../types';
 import { CheckCircle, Loader2, Scissors } from 'lucide-react';
 
@@ -9,13 +9,10 @@ interface Props {
 }
 
 const DetectionModule: React.FC<Props> = ({ items, onCrop }) => {
-  // Filter to only show items that have started processing (not idle)
   const activeItems = items.filter(i => i.status !== 'idle');
   
   if (activeItems.length === 0) return null;
 
-  // In the new flow, detection and cropping often happen together on the server.
-  // We consider it "detected" if we have a previewUrl (predict_img) or if it's already cropped.
   const isAllDetected = activeItems.every(i => i.status === 'detected' || i.status === 'cropped' || i.status === 'error');
   const processingCount = activeItems.filter(i => i.status === 'detecting' || i.status === 'uploading').length;
 
@@ -36,8 +33,6 @@ const DetectionModule: React.FC<Props> = ({ items, onCrop }) => {
         </div>
         <button
           onClick={onCrop}
-          // If items are already cropped by server, this button might just scroll down or be disabled/hidden
-          // For this flow, we'll keep it active if valid
           disabled={!isAllDetected}
           className={`flex items-center gap-2 px-6 py-2 rounded-lg font-medium transition-all ${
             isAllDetected 
@@ -60,15 +55,17 @@ const DetectionModule: React.FC<Props> = ({ items, onCrop }) => {
 };
 
 const DetectionCard: React.FC<{ item: ScanItem }> = ({ item }) => {
+  // If we have results, use the first one's previewUrl (which typically shows the red boxes)
+  // otherwise fallback to originalUrl
+  const displayUrl = (item.results && item.results.length > 0) 
+    ? item.results[0].previewUrl 
+    : item.originalUrl;
+
   return (
     <div className="bg-white rounded-xl overflow-hidden shadow-sm border border-slate-200 flex flex-col h-[400px] transition-all hover:shadow-md">
       <div className="relative flex-1 bg-slate-900 overflow-hidden flex items-center justify-center">
-        {/* 
-           If we have a previewUrl (predict_img from server), show that.
-           Otherwise show original.
-        */}
         <img 
-          src={item.previewUrl || item.originalUrl} 
+          src={displayUrl} 
           alt="scan" 
           className="w-full h-full object-contain"
         />

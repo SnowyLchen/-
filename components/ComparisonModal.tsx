@@ -1,15 +1,16 @@
 
 import React from 'react';
 import { X, Download, ArrowRight, ScanLine } from 'lucide-react';
-import { ScanItem } from '../types';
+import { ScanItem, ProcessedResult } from '../types';
 
 interface Props {
   item: ScanItem;
+  result: ProcessedResult;
   onClose: () => void;
 }
 
-const ComparisonModal: React.FC<Props> = ({ item, onClose }) => {
-  if (!item.croppedUrl) return null;
+const ComparisonModal: React.FC<Props> = ({ item, result, onClose }) => {
+  if (!result.croppedUrl) return null;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/90 backdrop-blur-sm p-4 md:p-8 animate-fade-in">
@@ -40,11 +41,11 @@ const ComparisonModal: React.FC<Props> = ({ item, onClose }) => {
           <div className="flex-1 p-6 flex flex-col border-b md:border-b-0 md:border-r border-slate-200 relative group">
             <div className="absolute top-6 left-6 z-10 bg-slate-800/80 text-white text-xs font-medium px-3 py-1.5 rounded-full backdrop-blur-md shadow-sm flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse"></span>
-              原始扫描件
+              原始识别
             </div>
             <div className="flex-1 flex items-center justify-center w-full h-full overflow-hidden rounded-lg bg-slate-100 border border-slate-200/50">
                  <img 
-                  src={item.originalUrl} 
+                  src={result.previewUrl || item.originalUrl} 
                   alt="Original" 
                   className="max-w-full max-h-full object-contain transition-transform duration-500 group-hover:scale-[1.02]" 
                  />
@@ -60,11 +61,11 @@ const ComparisonModal: React.FC<Props> = ({ item, onClose }) => {
           <div className="flex-1 p-6 flex flex-col relative group bg-[url('https://www.transparenttextures.com/patterns/checkerboard-light-gray.png')]">
              <div className="absolute top-6 right-6 z-10 bg-green-600/90 text-white text-xs font-medium px-3 py-1.5 rounded-full backdrop-blur-md shadow-sm flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-white"></span>
-                智能裁剪结果
+                裁剪结果
              </div>
              <div className="flex-1 flex items-center justify-center w-full h-full overflow-hidden rounded-lg border border-slate-200/50 bg-white/50 backdrop-blur-sm shadow-sm">
                 <img 
-                  src={item.croppedUrl} 
+                  src={result.croppedUrl} 
                   alt="Result" 
                   className="max-w-full max-h-full object-contain shadow-xl transition-transform duration-500 group-hover:scale-[1.02]" 
                 />
@@ -82,7 +83,7 @@ const ComparisonModal: React.FC<Props> = ({ item, onClose }) => {
                 关闭
             </button>
             <a 
-                href={item.croppedUrl} 
+                href={result.croppedUrl} 
                 download={`cropped_${item.name}`}
                 className="bg-primary hover:bg-blue-600 text-white px-6 py-2 rounded-lg font-medium transition-all flex items-center gap-2 shadow-lg shadow-blue-500/30 active:scale-95"
             >

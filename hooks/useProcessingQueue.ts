@@ -1,7 +1,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { ScanItem } from '../types';
+import { ScanItem, ProcessedResult } from '../types';
 import { ScanService } from '../services/scanService';
 
 export interface Notification {
@@ -9,6 +9,24 @@ export interface Notification {
   message: string;
   type: 'success' | 'error';
 }
+
+// Helper to ensure URL is displayable (simple heuristic)
+const formatApiUrl = (url: string) => {
+  if (!url) return '';
+  if (url.startsWith('http') || url.startsWith('data:') || url.startsWith('blob:')) {
+    return url;
+  }
+  // Fallback: assume base64 if it doesn't look like a path, or if previous logic dictated it.
+  // Given previous context, we'll err on the side of adding base64 header if missing for raw data.
+  // But if it ends in .jpg/.png, it's likely a path.
+  if (url.match(/\.(jpg|jpeg|png|webp)$/i)) {
+     // It is a path. If we have a base URL strategy, we would prepend it here.
+     // For now, return as is (user might have a proxy or base tag).
+     return url;
+  }
+  // Assume raw base64 data
+  return `data:image/png;base64,${url}`;
+};
 
 export const useProcessingQueue = () => {
   const [items, setItems] = useState<ScanItem[]>([]);
@@ -45,7 +63,8 @@ export const useProcessingQueue = () => {
       file,
       originalUrl: URL.createObjectURL(file),
       name: file.name,
-      status: 'idle'
+      status: 'idle',
+      results: []
     }));
     setItems(prev => [...prev, ...newItems]);
   }, []);
@@ -55,7 +74,8 @@ export const useProcessingQueue = () => {
       id: uuidv4(),
       originalUrl: url,
       name: `AI_Sample_${Date.now().toString().slice(-4)}.png`,
-      status: 'idle'
+      status: 'idle',
+      results: []
     };
     setItems(prev => [...prev, newItem]);
   }, []);
@@ -113,38 +133,43 @@ export const useProcessingQueue = () => {
              remotePath = await ScanService.uploadImage(file);
            } catch (e) {
              console.error("Blob conversion failed", e);
-             throw new Error("Failed to prepare image for upload");
+             throw new Error("准备图片上传失败");
            }
         }
 
         if (!remotePath) {
-           throw new Error("Upload returned no path");
+           throw new Error("上传未返回有效路径");
         }
 
         // 2. Inference Phase (Upload complete, starting detection)
         updateItemStatus(itemId, 'detecting', { remoteUrl: remotePath });
 
         // Pass the single remote path to the prediction API
-        const results = await ScanService.predictAndCrop([remotePath]);
+        const backendResults = await ScanService.predictAndCrop([remotePath]);
         
-        if (results && results.length > 0) {
-           const result = results[0];
+        if (backendResults && backendResults.length > 0) {
+           // Map backend results to our internal structure
+           const processedResults: ProcessedResult[] = backendResults.map(res => ({
+              img: res.img,
+              previewUrl: formatApiUrl(res.predict_img),
+              croppedUrl: formatApiUrl(res.crop_img)
+           }));
+
            // 3. Completion Phase
            updateItemStatus(itemId, 'cropped', {
-             previewUrl: result.predict_img, // Detection visualization
-             croppedUrl: result.crop_img,    // Final cropped result
+             results: processedResults
            });
            
            // 4. Notification
            addNotification(`图片 ${currentItem.name} 处理完成`, 'success');
         } else {
-           throw new Error("No results returned from API");
+           throw new Error("API 未返回处理结果");
         }
 
       } catch (error: any) {
         console.error(`Processing failed for ${currentItem.name}`, error);
         updateItemStatus(itemId, 'error', { errorMessage: error.message });
-        addNotification(`图片 ${currentItem.name} 处理失败`, 'error');
+        addNotification(`处理失败: ${error.message}`, 'error');
       }
       
       // Optional: Short delay for better UI pacing
@@ -153,7 +178,7 @@ export const useProcessingQueue = () => {
 
     setIsProcessing(false);
 
-  }, [addNotification]); // Dependency reduced to stable addNotification
+  }, [addNotification]);
 
   return {
     items,

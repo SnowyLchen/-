@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import { ScanItem } from '../types';
-import { Loader2, CheckCircle, Download, FileArchive, RefreshCw, ZoomIn, ArrowRight, AlertCircle } from 'lucide-react';
+import { ScanItem, ProcessedResult } from '../types';
+import { Loader2, CheckCircle, Download, FileArchive, RefreshCw, ZoomIn, ArrowRight, AlertCircle, Layers } from 'lucide-react';
 import ImageViewer from './ImageViewer';
 
 interface Props {
@@ -40,15 +40,25 @@ const ResultList: React.FC<Props> = ({ items, onReset }) => {
       const zip = new window.JSZip();
       const folder = zip.folder("processed_scans");
 
-      const promises = activeItems.filter(i => i.status === 'cropped').map(async (item) => {
-        if (item.croppedUrl) {
-          const response = await fetch(item.croppedUrl);
-          const blob = await response.blob();
-          const ext = item.name.split('.').pop() || 'jpg';
-          const name = item.name.replace(`.${ext}`, `_processed.${ext}`);
-          folder.file(name, blob);
-        }
-      });
+      const promises = activeItems
+        .filter(i => i.status === 'cropped')
+        .flatMap(item => 
+          item.results.map(async (result, index) => {
+            if (result.croppedUrl) {
+              try {
+                const response = await fetch(result.croppedUrl);
+                const blob = await response.blob();
+                const ext = item.name.split('.').pop() || 'jpg';
+                // Handle naming for multiple results
+                const suffix = item.results.length > 1 ? `_${index + 1}` : '';
+                const name = item.name.replace(`.${ext}`, `_processed${suffix}.${ext}`);
+                folder.file(name, blob);
+              } catch(e) {
+                console.warn("Failed to download", result.croppedUrl);
+              }
+            }
+          })
+        );
 
       await Promise.all(promises);
 
@@ -111,7 +121,7 @@ const ResultList: React.FC<Props> = ({ items, onReset }) => {
         </div>
       </div>
 
-      {/* Compact Comparison List */}
+      {/* Comparison List */}
       <div className="grid grid-cols-1 gap-4">
         {activeItems.map((item) => (
           <ComparisonRow 
@@ -139,22 +149,15 @@ const ComparisonRow: React.FC<{
     onView: (url: string, title: string) => void 
 }> = ({ item, onView }) => {
   
-  const getBoxStyle = () => {
-    if (!item.boundingBox || !item.width || !item.height) return { display: 'none' };
-    const { x, y, width, height } = item.boundingBox;
-    return {
-      left: `${(x / item.width) * 100}%`,
-      top: `${(y / item.height) * 100}%`,
-      width: `${(width / item.width) * 100}%`,
-      height: `${(height / item.height) * 100}%`,
-    };
-  };
-
   const isReady = item.status === 'cropped';
   const isError = item.status === 'error';
+  const hasResults = item.results.length > 0;
+
+  // Use first result for preview logic if needed, or original
+  const previewImage = hasResults ? item.results[0].previewUrl : item.originalUrl;
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden flex flex-col md:flex-row h-[220px]">
+    <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden flex flex-col md:flex-row min-h-[220px]">
         
         {/* File Info Sidebar - Compact */}
         <div className="md:w-40 p-3 bg-slate-50 border-b md:border-b-0 md:border-r border-slate-200 flex flex-row md:flex-col justify-between gap-2 shrink-0">
@@ -166,39 +169,37 @@ const ComparisonRow: React.FC<{
                     {item.status === 'cropped' && <span className="text-green-600 font-medium flex items-center gap-1"><CheckCircle className="w-3 h-3"/> 已完成</span>}
                     {item.status === 'error' && <span className="text-red-500">失败</span>}
                 </div>
+                {hasResults && (
+                  <div className="mt-2 text-xs text-slate-400 flex items-center gap-1">
+                    <Layers className="w-3 h-3" />
+                    <span>{item.results.length} 个结果</span>
+                  </div>
+                )}
             </div>
             
-            {isReady && (
-                 <a 
-                   href={item.croppedUrl} 
-                   download={`processed_${item.name}`}
-                   className="text-[11px] flex items-center gap-1 text-slate-500 hover:text-primary hover:bg-blue-50 px-2 py-1 rounded transition-colors"
-                 >
-                    <Download className="w-3 h-3" /> 下载结果
-                 </a>
+            {isReady && hasResults && (
+                // Just a visual indicator, action is in the main view
+                <div className="text-[10px] text-slate-400">
+                   右侧查看结果
+                </div>
             )}
         </div>
 
         {/* Visual Area */}
         <div className="flex-1 flex relative overflow-hidden">
             
-            {/* Left: Original + Boundary */}
+            {/* Left: Original/Detected */}
             <div className="flex-1 relative bg-slate-100/50 border-r border-slate-100 group">
                 
                 <div className="w-full h-full p-2 flex items-center justify-center relative">
                     <div className="relative h-full max-w-full">
+                        {/* Show preview image which has detection boxes usually */}
                         <img 
-                            src={item.originalUrl} 
+                            src={item.status === 'detecting' ? item.originalUrl : previewImage} 
                             alt="Original" 
                             className="max-w-full max-h-full object-contain block mx-auto"
                         />
-                        {(item.status === 'detected' || item.status === 'cropping' || item.status === 'cropped') && (
-                            <div 
-                                className="absolute border border-green-500 bg-green-500/20 z-20 cursor-pointer hover:bg-green-500/30 transition-colors"
-                                style={getBoxStyle()}
-                                onClick={() => onView(item.originalUrl, `${item.name} - 原始识别`)}
-                            ></div>
-                        )}
+                        
                         {item.status === 'detecting' && (
                              <div className="absolute inset-0 bg-blue-500/10 animate-pulse z-30"></div>
                         )}
@@ -206,7 +207,7 @@ const ComparisonRow: React.FC<{
                 </div>
 
                 <button 
-                    onClick={() => onView(item.originalUrl, `${item.name} - 原始识别`)}
+                    onClick={() => onView(previewImage, `${item.name} - 识别预览`)}
                     className="absolute bottom-2 right-2 p-1 bg-white/90 rounded shadow-sm text-slate-400 hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity"
                 >
                     <ZoomIn className="w-3 h-3" />
@@ -218,39 +219,36 @@ const ComparisonRow: React.FC<{
                 <ArrowRight className="w-3 h-3" />
             </div>
 
-            {/* Right: Cropped Result */}
-            <div className="flex-1 relative bg-[url('https://www.transparenttextures.com/patterns/checkerboard-light-gray.png')] group">
-                <div className="w-full h-full p-2 flex items-center justify-center">
-                    {item.status === 'cropped' && item.croppedUrl ? (
-                        <img 
-                            src={item.croppedUrl} 
-                            alt="Result" 
-                            className="max-w-full max-h-full object-contain shadow-sm cursor-pointer hover:scale-[1.02] transition-transform"
-                            onClick={() => item.croppedUrl && onView(item.croppedUrl, `${item.name} - 裁剪结果`)}
-                        />
-                    ) : isError ? (
-                        <div className="flex flex-col items-center text-red-400">
-                            <AlertCircle className="w-6 h-6 mb-1" />
-                            <span className="text-[10px]">失败</span>
-                        </div>
-                    ) : (
-                        <div className="flex flex-col items-center justify-center text-slate-300">
-                            {item.status === 'cropping' ? (
-                                <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                            ) : (
-                                <div className="w-8 h-12 border-2 border-dashed border-slate-200 rounded-sm"></div>
-                            )}
-                        </div>
-                    )}
-                </div>
-                 
-                {item.croppedUrl && (
-                    <button 
-                        onClick={() => item.croppedUrl && onView(item.croppedUrl, `${item.name} - 裁剪结果`)}
-                        className="absolute bottom-2 right-2 p-1 bg-white/90 rounded shadow-sm text-slate-400 hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                        <ZoomIn className="w-3 h-3" />
-                    </button>
+            {/* Right: Cropped Result(s) */}
+            <div className="flex-1 relative bg-[url('https://www.transparenttextures.com/patterns/checkerboard-light-gray.png')] group overflow-x-auto">
+                
+                {isReady && hasResults ? (
+                    <div className={`w-full h-full p-2 flex items-center ${item.results.length > 1 ? 'justify-start gap-2 overflow-x-auto px-4' : 'justify-center'}`}>
+                        {item.results.map((res, idx) => (
+                            <div key={idx} className="relative shrink-0 h-full flex items-center">
+                                <img 
+                                    src={res.croppedUrl} 
+                                    alt={`Result ${idx}`} 
+                                    className="max-w-full max-h-[180px] object-contain shadow-sm cursor-pointer hover:scale-[1.02] transition-transform border border-slate-200 bg-white"
+                                    onClick={() => onView(res.croppedUrl, `${item.name} - 结果 ${idx + 1}`)}
+                                />
+                                <div className="absolute bottom-0 left-0 bg-black/50 text-white text-[10px] px-1">#{idx+1}</div>
+                            </div>
+                        ))}
+                    </div>
+                ) : isError ? (
+                    <div className="flex flex-col items-center justify-center h-full text-red-400">
+                        <AlertCircle className="w-6 h-6 mb-1" />
+                        <span className="text-[10px]">处理失败</span>
+                    </div>
+                ) : (
+                    <div className="flex flex-col items-center justify-center h-full text-slate-300 w-full">
+                        {item.status === 'cropping' || item.status === 'detecting' ? (
+                            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                        ) : (
+                            <div className="w-8 h-12 border-2 border-dashed border-slate-200 rounded-sm"></div>
+                        )}
+                    </div>
                 )}
             </div>
 
