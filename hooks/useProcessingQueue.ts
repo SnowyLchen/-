@@ -17,7 +17,6 @@ const formatApiUrl = (url: string) => {
     return url;
   }
   // Fallback: assume base64 if it doesn't look like a path, or if previous logic dictated it.
-  // Given previous context, we'll err on the side of adding base64 header if missing for raw data.
   // But if it ends in .jpg/.png, it's likely a path.
   if (url.match(/\.(jpg|jpeg|png|webp)$/i)) {
      // It is a path. If we have a base URL strategy, we would prepend it here.
@@ -148,12 +147,27 @@ export const useProcessingQueue = () => {
         const backendResults = await ScanService.predictAndCrop([remotePath]);
         
         if (backendResults && backendResults.length > 0) {
-           // Map backend results to our internal structure
-           const processedResults: ProcessedResult[] = backendResults.map(res => ({
-              img: res.img,
-              previewUrl: formatApiUrl(res.predict_img),
-              croppedUrl: formatApiUrl(res.crop_img)
-           }));
+           // Since we only sent one image, we expect the first result corresponds to it.
+           const res = backendResults[0];
+           const previewUrl = formatApiUrl(res.predict_img);
+
+           let processedResults: ProcessedResult[] = [];
+
+           // Prioritize all_crop_imgs if available and not empty
+           if (res.all_crop_imgs && Array.isArray(res.all_crop_imgs) && res.all_crop_imgs.length > 0) {
+               processedResults = res.all_crop_imgs.map(cropUrl => ({
+                   img: res.img,
+                   previewUrl: previewUrl,
+                   croppedUrl: formatApiUrl(cropUrl)
+               }));
+           } else if (res.crop_img) {
+               // Fallback to single crop_img
+               processedResults.push({
+                   img: res.img,
+                   previewUrl: previewUrl,
+                   croppedUrl: formatApiUrl(res.crop_img)
+               });
+           }
 
            // 3. Completion Phase
            updateItemStatus(itemId, 'cropped', {
@@ -161,7 +175,7 @@ export const useProcessingQueue = () => {
            });
            
            // 4. Notification
-           addNotification(`图片 ${currentItem.name} 处理完成`, 'success');
+           addNotification(`图片 ${currentItem.name} 处理完成，发现 ${processedResults.length} 个裁剪结果`, 'success');
         } else {
            throw new Error("API 未返回处理结果");
         }

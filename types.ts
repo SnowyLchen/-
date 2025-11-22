@@ -11,8 +11,8 @@ export type ProcessingStatus = 'idle' | 'uploading' | 'detecting' | 'detected' |
 export interface BackendScanResult {
   img: string;         // Original image URL from server or base64
   predict_img: string; // Image with detection visualization
-  crop_img: string;    // Final cropped image
-  all_crop_imgs: string;    // All cropped images
+  crop_img: string;    // Primary cropped image
+  all_crop_imgs?: string[]; // List of all cropped images found
 }
 
 export interface ProcessedResult {

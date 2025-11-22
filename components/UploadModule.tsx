@@ -118,11 +118,12 @@ const UploadModule: React.FC<Props> = ({
       {/* AI Generation Option */}
       <div className="flex justify-center">
         <button 
+          onClick={handleGenerate}
           disabled={isGenerating}
           className="flex items-center gap-2 text-xs text-slate-600 bg-white border border-slate-200 px-4 py-2 rounded-full hover:bg-slate-50 hover:text-primary transition-all shadow-sm"
         >
           {isGenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3 text-purple-500" />}
-          <span>扫描件边界预测自动裁剪</span>
+          <span>使用 Gemini AI 生成测试样本</span>
         </button>
       </div>
 

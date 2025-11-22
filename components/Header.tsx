@@ -9,13 +9,12 @@ const Header: React.FC = () => {
           <div className="bg-primary p-1.5 rounded-lg">
             <ScanLine className="w-6 h-6 text-white" />
           </div>
-          <span className="text-xl font-bold tracking-tight text-slate-900">基于<span
-              className="text-primary">yolo11-seg模型</span>实现智能检测边界助手</span>
+          <span className="text-xl font-bold tracking-tight text-slate-900">智能扫描<span className="text-primary">助手</span></span>
         </div>
         
         <div className="hidden md:flex items-center gap-6">
-           {/*<a href="#" className="text-sm font-medium text-slate-500 hover:text-primary transition-colors">文档</a>*/}
-           {/*<a href="#" className="text-sm font-medium text-slate-500 hover:text-primary transition-colors">价格</a>*/}
+           <a href="#" className="text-sm font-medium text-slate-500 hover:text-primary transition-colors">文档</a>
+           <a href="#" className="text-sm font-medium text-slate-500 hover:text-primary transition-colors">价格</a>
            <div className="flex items-center gap-1 text-xs font-medium bg-slate-100 px-3 py-1 rounded-full text-slate-600">
              <Layers className="w-3 h-3" />
              v1.0.0 (Beta)
